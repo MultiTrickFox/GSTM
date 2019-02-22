@@ -1,13 +1,15 @@
-include("GSTM.jl")
+using Distributed: @everywhere, @distributed, addprocs; addprocs(3)
+@everywhere include("GSTM.jl")
 
 
-hm_vectors   = 4
-vector_size  = 13
-storage_size = 20
+const hm_vectors   = 4
+const vector_size  = 13
+const storage_size = 20
 
-is_layers = [50, 35]
-gs_layers = [30]
-go_layers = [30]
+const is_layers = [50, 35]
+const gs_layers = [30]
+const go_layers = [30]
+
 
 
 make_model(hm_vectors, vector_size, storage_size, is_layers, gs_layers, go_layers) =
@@ -19,16 +21,16 @@ begin
 [model, state]
 end
 
-(encoder, decoder), (enc_zero_state, dec_zero_state) = make_model(hm_vectors, vector_size, storage_size, is_layers, gs_layers, go_layers)
+(encoder, decoder), (enc_zerostate, dec_zerostate) = make_model(hm_vectors, vector_size, storage_size, is_layers, gs_layers, go_layers)
 
-make_data(hm_data) =
+make_data(hm_data; max_timesteps=50) =
 begin
     data = []
     for i in 1:hm_data
         push!(data,
             [
-                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:(rand()+1)*75],
-                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:(rand()+1)*75]
+                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:max_timesteps],#(rand()+1)*max_timestep],
+                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:max_timesteps]#(rand()+1)*max_timestep]
             ]
         )
     end
@@ -49,36 +51,41 @@ array_new
 end
 
 
-function train(data, lr, epochs)
+train(data, (encoder, decoder), enc_zerostate, lr, ep) =
 
-    for epoch in 1:epochs
+    for epoch in 1:ep
 
-        loss = 0
+        println("Epoch ", epoch, ": ")
 
-        for (x,y) in shuffle(data)
+        loss = 0.0
 
-            # sequence_loss(propogate(encoder, decoder, enc_zero_state, dec_zero_state, x, y), y)
+        for (g,l) in
 
-            result = @diff sequence_loss(
-                        propogate(encoder, decoder, enc_zero_state, x, length(y)),
-                        y
-                    )
+            (@distributed (vcat) for (x,y) in shuffle(data)
 
-            loss += value(result)
+                d = @diff sequence_loss(
+                    propogate(encoder, decoder, deepcopy(enc_zerostate), x, length(y), dec_state=deepcopy(dec_zerostate)),
+                    y
+                )
 
-            println(value(result))
+                print("/")
 
-            upd!(encoder, decoder, result, lr)
+                grads(d, encoder, decoder), value(d)
 
-            print("/")
+            end)
+
+            upd!(encoder, decoder, g, lr)
+            loss += l
         end
-        println(" ")
 
-        println("Epoch ", epoch, " Loss ", loss)
-
+        @show sum(loss)
     end
 
-end
 
 
-@time train(make_data(20), .001, 10)
+@time train(make_data(
+                100, max_timesteps=50),
+        (encoder, decoder),
+         enc_zerostate,
+         .001,
+         12)
