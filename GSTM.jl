@@ -13,9 +13,9 @@ mutable struct Layer
     wfs::Param
     wi1::Param
     wi2::Param
-    # wd1::Param
-    # wd2::Param
-    # wds::Param
+    wd1::Param
+    wd2::Param
+    wds::Param
     wk1::Param
     wk2::Param
     wks::Param
@@ -32,16 +32,16 @@ begin
     wfs = Param(2*sq .* randn(layer_size,layer_size) .-sq)
     wi1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     wi2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    # wd1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    # wd2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    # wds = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    wd1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
+    wd2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
+    wds = Param(2*sq .* randn(layer_size,layer_size) .-sq)
     wk1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     wk2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
     wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
     ws1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     ws2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
     wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    layer = Layer(wf1, wf2, wfs, wi1, wi2, wk1, wk2, wks, ws1, ws2, wss)
+    layer = Layer(wf1, wf2, wfs, wi1, wi2, wd1, wd2, wds, wk1, wk2, wks, ws1, ws2, wss)
 layer
 end
 
@@ -49,10 +49,10 @@ end
 begin
     focus   = sigm.(in_1 * layer.wf1 + in_2 * layer.wf2 + state * layer.wfs)
     interm  = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state .* focus)
-    # discard = sigm.(in_1 * layer.wd1 + in_2 * layer.wd2 + state * layer.wds)
+    discard = sigm.(in_1 * layer.wd1 + in_2 * layer.wd2 + state * layer.wds)
     keep    = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + state * layer.wks)
     show    = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + state * layer.wss)
-    # state  -= discard .* state
+    state  -= discard .* state
     state  += keep .* interm
 [show .* interm, state]
 end
