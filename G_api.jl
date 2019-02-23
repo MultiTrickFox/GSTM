@@ -2,13 +2,15 @@ using Distributed: @everywhere, @distributed, addprocs; addprocs(3)
 @everywhere include("GSTM.jl")
 
 
+
 const hm_vectors   = 4
 const vector_size  = 13
-const storage_size = 20
+const storage_size = 25
 
-const is_layers = [50, 35]
+
+const is_layers = [40, 30]
 const gs_layers = [30]
-const go_layers = [30]
+const go_layers = [35]
 
 
 
@@ -29,8 +31,8 @@ begin
     for i in 1:hm_data
         push!(data,
             [
-                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:max_timesteps],#(rand()+1)*max_timestep],
-                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:max_timesteps]#(rand()+1)*max_timestep]
+                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:rand(5:max_timesteps)],#(rand()+1)*max_timestep],
+                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:rand(5:max_timesteps)]#(rand()+1)*max_timestep]
             ]
         )
     end
@@ -38,7 +40,8 @@ data
 end
 
 
-function shuffle(arr_in)
+shuffle(arr_in) =
+begin
     array_copy = copy(arr_in)
     array_new  = []
     while length(array_copy) > 0
@@ -57,6 +60,8 @@ train(data, (encoder, decoder), enc_zerostate, lr, ep) =
 
         println("Epoch ", epoch, ": ")
 
+        batch_size = length(data)
+
         loss = 0.0
 
         for (g,l) in
@@ -64,17 +69,15 @@ train(data, (encoder, decoder), enc_zerostate, lr, ep) =
             (@distributed (vcat) for (x,y) in shuffle(data)
 
                 d = @diff sequence_loss(
-                    propogate(encoder, decoder, deepcopy(enc_zerostate), x, length(y), dec_state=deepcopy(dec_zerostate)),
+                    propogate(encoder, decoder, enc_zerostate, x, length(y)),
                     y
                 )
-
-                print("/")
 
                 grads(d, encoder, decoder), value(d)
 
             end)
 
-            upd!(encoder, decoder, g, lr)
+            upd!(encoder, decoder, g, lr, batch_size)
             loss += l
         end
 
@@ -87,5 +90,5 @@ train(data, (encoder, decoder), enc_zerostate, lr, ep) =
                 100, max_timesteps=50),
         (encoder, decoder),
          enc_zerostate,
-         .001,
-         12)
+         .0001,
+         20)

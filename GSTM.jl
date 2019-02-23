@@ -8,128 +8,85 @@ relu(x) = max(0,x)
 
 
 mutable struct Layer
-    # wf1::Param
-    # wf2::Param
-    # wfs::Param
-    # wk1::Param
-    # wk2::Param
-    # wks::Param
-    # wi1::Param
-    # wi2::Param
-    # wis::Param
-    # ws1::Param
-    # ws2::Param
-    # wss::Param
-    wo1::Param
-    wo2::Param
-    wos::Param
+    wf1::Param
+    wf2::Param
+    wfs::Param
+    wi1::Param
+    wi2::Param
+    # wd1::Param
+    # wd2::Param
+    # wds::Param
     wk1::Param
     wk2::Param
     wks::Param
+    ws1::Param
+    ws2::Param
+    wss::Param
 end
 
 Layer(in_size1, in_size2, layer_size) =
 begin
     sq = sqrt(2/((in_size1+in_size2)/2+layer_size))
-    # wf1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    # wf2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    # wfs = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    # wk1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    # wk2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    # wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    # wi1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    # wi2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    # wis = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    # ws1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    # ws2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    # wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    wo1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    wo2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wos = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    wf1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
+    wf2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
+    wfs = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    wi1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
+    wi2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
+    # wd1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
+    # wd2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
+    # wds = Param(2*sq .* randn(layer_size,layer_size) .-sq)
     wk1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     wk2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
     wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    layer = Layer(wo1, wo2, wos, wk1, wk2, wks)
+    ws1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
+    ws2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
+    wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    layer = Layer(wf1, wf2, wfs, wi1, wi2, wk1, wk2, wks, ws1, ws2, wss)
 layer
 end
 
 (layer::Layer)(state, in_1, in_2) =
 begin
-    # focus  = sigm.(in_1 * layer.wf1 + in_2 * layer.wf2 + state * layer.wfs)
-    # interm = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state .* focus)
-    # keep   = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + state * layer.wks)
-
-    # interm = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state * layer.wis)
-    # show   = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + state * layer.wss)
-    # keep   = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + state * layer.wks)
-
-    out = tanh.(in_1 * layer.wo1  + in_2 * layer.wo2 + state * layer.wos)
-    keep = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + state * layer.wks)
-    state = keep .* state + (1 .- keep) .* out
-
-[out, state]
+    focus   = sigm.(in_1 * layer.wf1 + in_2 * layer.wf2 + state * layer.wfs)
+    interm  = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state .* focus)
+    # discard = sigm.(in_1 * layer.wd1 + in_2 * layer.wd2 + state * layer.wds)
+    keep    = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + state * layer.wks)
+    show    = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + state * layer.wss)
+    # state  -= discard .* state
+    state  += keep .* interm
+[show .* interm, state]
 end
 
 
 mutable struct LayerM
-    # wo1::Param
-    # wo2l::Param
-    # wo2r::Param
-    # wos::Param
-    # wk1::Param
-    # wk2l::Param
-    # wk2r::Param
-    # wks::Param
-
     wf1::Param
     wf2l::Param
     wf2r::Param
     wfs::Param
-
     wk1::Param
     wk2l::Param
     wk2r::Param
     wks::Param
-
     wi1::Param
     wi2l::Param
     wi2r::Param
-
-    # ws1::Param
-    # ws2l::Param
-    # ws2r::Param
-    # wss::Param
-
 end
 
 LayerM(in_size1, in_size2l, in_size2r, layer_size) =
 begin
     sq = sqrt(2/(in_size1+in_size2r+layer_size))
-
     wf1  = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     wf2l = Param(2*sq .* randn(1,in_size2l)           .-sq)
     wf2r = Param(2*sq .* randn(in_size2r,layer_size)  .-sq)
     wfs  = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-
     wk1  = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     wk2l = Param(2*sq .* randn(1,in_size2l)           .-sq)
     wk2r = Param(2*sq .* randn(in_size2r,layer_size)  .-sq)
     wks  = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-
     wi1  = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     wi2l = Param(2*sq .* randn(1,in_size2l)           .-sq)
     wi2r = Param(2*sq .* randn(in_size2r,layer_size)  .-sq)
-    # ws1  = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    # ws2l = Param(2*sq .* randn(1,in_size2l)           .-sq)
-    # ws2r = Param(2*sq .* randn(in_size2r,layer_size)  .-sq)
-    # wss  = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    # wo1 = Param(randn(in_size1,layer_size))
-    # wo2 = Param(randn(in_size2,layer_size))
-    # wos = Param(randn(layer_size,layer_size))
-    # wk1 = Param(randn(in_size1,layer_size))
-    # wk2 = Param(randn(in_size2,layer_size))
-    # wks = Param(randn(layer_size,layer_size))
-    layerM = LayerM(wf1, wf2l, wf2r, wfs, wk1, wk2l, wk2r, wks, wi1, wi2l, wi2r)# , ws1, ws2l, ws2r, wss)
+    layerM = LayerM(wf1, wf2l, wf2r, wfs, wk1, wk2l, wk2r, wks, wi1, wi2l, wi2r)
 layerM
 end
 
@@ -138,21 +95,15 @@ begin
 
     focus  = sigm.(in_1 * layer.wf1 + layer.wf2l * in_2 * layer.wf2r + state * layer.wfs)
     interm = tanh.(in_1 * layer.wi1 + layer.wi2l * in_2 * layer.wi2r + state .* focus)
-    # show   = sigm.(in_1 * layer.ws1 + layer.ws2l * in_2 * layer.ws2r + state * layer.wss)
-    keep   = sigm.(in_1 * layer.wk1 + layer.wk2l * in_2 * layer.wk2r + state * layer.wks)
-
-    # out = tanh.(in_1 * layer.wo1  + layer.wo2l * in_2 * layer.wo2r + state * layer.wos)
-    # keep = sigm.(in_1 * layer.wk1 + layer.wk2l * in_2 * layer.wk2r + state * layer.wks)
-    # out = show .* interm
-    state += keep .* interm
-    # state += keep .* out
+    keep   = sigm.(in_1 * layer.wk1r + layer.wk2l * in_2 * layer.wk2r + state * layer.wks)
+    state = keep .* interm + (1 .- keep) .* state # TODO: MAKE a [state,state array] for keeping weights
 [interm, state]
 end
 
 
 
 struct IS
-    layer_1::LayerM
+    layer_1::Layer
     layer_2::Layer
     layer_out::Layer
 end
@@ -160,7 +111,7 @@ end
 IS(storage_size, hm_vectors, vector_size, layer_sizes, out_size) =
 begin
     is = IS(
-        LayerM(storage_size, hm_vectors, vector_size, layer_sizes[1]),
+        Layer(storage_size, hm_vectors*vector_size, layer_sizes[1]),
         Layer(storage_size, layer_sizes[1], layer_sizes[2]),
         Layer(storage_size, layer_sizes[2], out_size),
     )
@@ -248,7 +199,7 @@ end
 
 (encoder::ENCODER)(state, storage, vectors) =
 begin
-    is_out, is_state = encoder.is(state[1], storage, vcat(vectors...))
+    is_out, is_state = encoder.is(state[1], storage, hcat(vectors...))
     gs_out, gs_state = encoder.gs(state[2], storage, is_out)
     go_out, go_state = [], []
     for (vector, state_v) in zip(vectors, state[3])
@@ -281,7 +232,7 @@ end
 (decoder::DECODER)(state, storage, vectors, enc_storages, enc_vectors) =
 begin
     attended = attend(storage, enc_storages, enc_vectors)
-    is_out, is_state = decoder.is(state[1], storage, vcat(attended...))
+    is_out, is_state = decoder.is(state[1], storage, hcat(attended...))
     gs_out, gs_state = decoder.gs(state[2], storage, is_out)
     go_out, go_state = [], []
     for (vector, state_v) in zip(vectors, state[3])
@@ -301,24 +252,7 @@ begin
     similarities = soft([sum(dec_storage .* enc_storage) for enc_storage in enc_storages])
     # similarities = [sum(dec_storage .* enc_storage) for enc_storage in enc_storages]
 # enc_vectors[argmax(reshape(similarities, length(similarities)))]
-other_arr = sum([vec .* sim for (vec, sim) in zip(enc_vectors,similarities)])
-
-#     return_arr = []
-#     for (vec, sim) in zip(enc_vectors, similarities)
-#         arr = []
-#         for vec_i in vec
-#             push!(arr, vec_i .* sim)
-#         end
-#         push!(return_arr, arr)
-#     end
-#     return_arr = sum(return_arr)
-#
-# @show size(return_arr)
-#
-# if (other_arr == return_arr) println("YESSSS")
-# end
-
-other_arr
+sum([vec .* sim for (vec, sim) in zip(enc_vectors,similarities)])
 end
 
 
@@ -383,7 +317,7 @@ begin
 grads
 end
 
-upd!(encoder, decoder, grads, lr) =
+upd!(encoder, decoder, grads, lr, batch_size) =
 begin
     i = 0
     for model in [encoder, decoder]
@@ -393,7 +327,10 @@ begin
                 layer = getfield(net, nfield)
                 for lfield in fieldnames(typeof(layer))
                     i +=1
-                    setfield!(layer, lfield, Param(getfield(layer, lfield) - grads[i].*lr))
+                    g = grads[i]
+                    if g != nothing # TODO : rm dis check
+                        setfield!(layer, lfield, Param(getfield(layer, lfield) - g.*lr/batch_size))
+                    end
                 end
             end
         end
