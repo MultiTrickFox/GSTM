@@ -1,4 +1,5 @@
-using Distributed: @everywhere, @distributed, addprocs; addprocs(20)
+using Distributed: @everywhere, @distributed, procs, addprocs
+if length(procs()) <= 2 const hm = Sys.CPU_THREADS-1 ; addprocs(hm) ; println("$hm workers added.") end
 @everywhere include("GSTM.jl")
 
 
@@ -86,7 +87,7 @@ train(data, (encoder, decoder), enc_zerostate, lr, ep) =
 
 
 @time train(make_data(
-                100, max_timesteps=50),
+                1_000, max_timesteps=50),
         (encoder, decoder),
          enc_zerostate,
          .0001,
