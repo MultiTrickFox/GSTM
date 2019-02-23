@@ -1,4 +1,4 @@
-using Distributed: @everywhere, @distributed, addprocs; addprocs(3)
+using Distributed: @everywhere, @distributed, addprocs; addprocs(20)
 @everywhere include("GSTM.jl")
 
 
@@ -40,17 +40,16 @@ data
 end
 
 
-shuffle(arr_in) =
+shuffle!(arr_in) =
 begin
-    array_copy = copy(arr_in)
-    array_new  = []
-    while length(array_copy) > 0
-        index = rand(1:length(array_copy))
-        e = array_copy[index]
-        deleteat!(array_copy, index)
-        push!(array_new, e)
+    hm = length(arr_in)
+    for i in hm
+      ph = arr_in[i]
+      loc = rand(1:hm)
+      arr_in[i] = arr_in[loc]
+      arr_in[loc] = ph
     end
-array_new
+arr_in
 end
 
 
@@ -66,7 +65,7 @@ train(data, (encoder, decoder), enc_zerostate, lr, ep) =
 
         for (g,l) in
 
-            (@distributed (vcat) for (x,y) in shuffle(data)
+            (@distributed (vcat) for (x,y) in shuffle!(data)
 
                 d = @diff sequence_loss(
                     propogate(encoder, decoder, enc_zerostate, x, length(y)),
