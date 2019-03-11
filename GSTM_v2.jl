@@ -6,6 +6,45 @@ relu(x) = max(0,x)
 
 
 mutable struct Layer
+    wi1::Param
+    wi2::Param
+    wis::Param
+    wk1::Param
+    wk2::Param
+    wks::Param
+    ws1::Param
+    ws2::Param
+    wss::Param
+end
+
+Layer(in_size1, in_size2, layer_size) =
+begin
+    sq = sqrt(2/((in_size1+in_size2)/2+layer_size))
+    wi1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
+    wi2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
+    wis = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    wk1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
+    wk2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
+    wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    ws1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
+    ws2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
+    wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    layer = Layer(wi1, wi2, wis, wk1, wk2, wks, ws1, ws2, wss)
+layer
+end
+
+(layer::Layer)(state, in_1, in_2) =
+begin
+    interm = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state * layer.wis)
+    keep   = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + state * layer.wks)
+    show   = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + state * layer.wss)
+    state += interm .* keep
+    out    = interm .* show
+[out, state]
+end
+
+
+mutable struct LayerX
     wf1::Param
     wf2::Param
     wfs::Param
@@ -22,7 +61,7 @@ mutable struct Layer
     wss::Param
 end
 
-Layer(in_size1, in_size2, layer_size) =
+LayerX(in_size1, in_size2, layer_size) =
 begin
     sq = sqrt(2/(in_size1+in_size2+layer_size))
     wf1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
@@ -39,11 +78,11 @@ begin
     ws1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     ws2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
     wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    layer = Layer(wf1, wf2, wfs, wi1, wi2, wd1, wd2, wds, wk1, wk2, wks, ws1, ws2, wss)
-layer
+    layerX = LayerX(wf1, wf2, wfs, wi1, wi2, wd1, wd2, wds, wk1, wk2, wks, ws1, ws2, wss)
+layerX
 end
 
-(layer::Layer)(state, in_1, in_2) =
+(layer::LayerX)(state, in_1, in_2) =
 begin
     focus   = sigm.(in_1 * layer.wf1 + in_2 * layer.wf2 + state * layer.wfs)
     interm  = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state .* focus)
@@ -54,8 +93,6 @@ begin
     state  += keep .* interm
 [show .* interm, state]
 end
-
-
 
 
 
@@ -204,8 +241,6 @@ end
 
 
 
-
-
 attend(dec_storage, enc_storages, enc_vectors) =
 begin
     similarities = soft([sum(dec_storage .* enc_storage) for enc_storage in enc_storages])
@@ -254,6 +289,7 @@ dec_go_time
 end
 
 
+
 # using Statistics: norm
 
 grads(result, encoder, decoder) =
@@ -267,12 +303,30 @@ begin
                 for lfield in fieldnames(typeof(layer))
                     gradient = grad(result, getfield(layer, lfield))
                     push!(grads, gradient)
-                    # @show norm(gradient)
+                    # @info(mfield,nfield,lfield,norm(gradient))
                 end
             end
         end
     end
 grads
+end
+
+upd_rms!(encoder, decoder, grads, lr, accu_grads; alpha=0.9) =
+begin
+    i = 0
+    for model in [encoder, decoder]
+        for mfield in fieldnames(typeof(model))
+            net = getfield(model, mfield)
+            for nfield in fieldnames(typeof(net))
+                layer = getfield(net, nfield)
+                for lfield in fieldnames(typeof(layer))
+                    i +=1
+                    accu_grads[i] = alpha .* accu_grads[i] .+ (1 - alpha) .* grads[i].^2
+                    setfield!(layer, lfield, Param(getfield(layer, lfield) - grads[i].*lr./sqrt.(accu_grads[i].+1e-8)))
+                end
+            end
+        end
+    end
 end
 
 upd!(encoder, decoder, grads, lr) =
@@ -285,10 +339,7 @@ begin
                 layer = getfield(net, nfield)
                 for lfield in fieldnames(typeof(layer))
                     i +=1
-                    g = grads[i]
-                    if g != nothing # TODO : rm dis check
-                        setfield!(layer, lfield, Param(getfield(layer, lfield) - g.*lr))
-                    end
+                    setfield!(layer, lfield, Param(getfield(layer, lfield) - grads[i].*lr))
                 end
             end
         end
