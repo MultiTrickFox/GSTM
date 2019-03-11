@@ -8,16 +8,16 @@ const vector_size  = 13
 const storage_size = 25
 
 
-const is_layers = [15, 20]
-const gs_layers = [20]
-const go_layers = [30]
+const is_layers = [85]
+const gs_layers = [45]
+const go_layers = [55]
 
 
 const max_t     = 100
 const hm_data   = 50
 
-const lr        = 1e-4
-const hm_epochs = 100
+const lr        = 1e-5
+const hm_epochs = 250
 
 
 
@@ -38,8 +38,8 @@ begin
     for i in 1:hm_data
         push!(data,
             [
-                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:rand(max_timesteps/2:max_timesteps)],#(rand()+1)*max_timestep],
-                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:rand(max_timesteps/2:max_timesteps)]#(rand()+1)*max_timestep]
+                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:rand(max_timesteps/2:max_timesteps)],
+                [[randn(1, vector_size) for iii in 1:hm_vectors] for ii in 1:rand(max_timesteps/2:max_timesteps)]
             ]
         )
     end
@@ -83,6 +83,8 @@ accu_grads = make_accugrads(hm_vectors, vector_size, storage_size, is_layers, gs
 
 train(data, (encoder, decoder), enc_zerostate, lr, ep; accu_grads=nothing) =
 begin
+    @show lr
+
     losses = []
 
     for epoch in 1:ep
@@ -105,8 +107,8 @@ begin
 
             end)
 
-            # upd!(encoder, decoder, g, lr)
-            upd_rms!(encoder, decoder, g, lr, accu_grads, alpha=.9)
+            upd!(encoder, decoder, g, lr)
+            #upd_rms!(encoder, decoder, g, lr, accu_grads, alpha=.9)
             loss += sum(l)
 
         end ; @show loss ; push!(losses, loss)
