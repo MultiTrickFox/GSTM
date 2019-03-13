@@ -1,97 +1,22 @@
 using Knet: @diff, Param, value, grad
 using Knet: sigm, tanh
 
+relu(x) = max(0,x)
+
 
 
 mutable struct Layer
-    wi1::Param
-    wi2::Param
-    wis::Param
-    wk1::Param
-    wk2::Param
-    wks::Param
-    ws1::Param
-    ws2::Param
-    wss::Param
-end
-
-Layer(in_size1, in_size2, layer_size) =
-begin
-    sq = sqrt(2/((in_size1+in_size2)/2+layer_size))
-    wi1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    wi2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wis = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    wk1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    wk2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    ws1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    ws2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    layer = Layer(wi1, wi2, wis, wk1, wk2, wks, ws1, ws2, wss)
-layer
-end
-
-(layer::Layer)(state, in_1, in_2) =
-begin
-    sq_st  = tanh.(state)
-    interm = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + sq_st * layer.wis)
-    keep   = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + sq_st * layer.wks)
-    show   = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + sq_st * layer.wss)
-    state += interm .* keep
-    out    = interm .* show
-[out, state]
-end
-
-
-mutable struct LayerS
-    wi1::Param
-    wi2::Param
-    wis::Param
-    ws1::Param
-    ws2::Param
-    wss::Param
-end
-
-LayerS(in_size1, in_size2, layer_size) =
-begin
-    sq = sqrt(2/((in_size1+in_size2)/2+layer_size))
-    wi1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    wi2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wis = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    ws1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    ws2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    layer = LayerS(wi1, wi2, wis, ws1, ws2, wss)
-layer
-end
-
-(layer::LayerS)(state, in_1, in_2) =
-begin
-    show   = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + state * layer.wss)
-    out    = show .* state
-    state  = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state * layer.wis)
-[out, state]
-end
-
-
-mutable struct LayerX
     wf1::Param
     wf2::Param
     wfs::Param
     wi1::Param
     wi2::Param
-    wd1::Param
-    wd2::Param
-    wds::Param
     wk1::Param
     wk2::Param
     wks::Param
-    ws1::Param
-    ws2::Param
-    wss::Param
 end
 
-LayerX(in_size1, in_size2, layer_size) =
+Layer(in_size1, in_size2, layer_size) =
 begin
     sq = sqrt(2/(in_size1+in_size2+layer_size))
     wf1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
@@ -99,50 +24,36 @@ begin
     wfs = Param(2*sq .* randn(layer_size,layer_size) .-sq)
     wi1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     wi2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wd1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    wd2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wds = Param(2*sq .* randn(layer_size,layer_size) .-sq)
     wk1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
     wk2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
     wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    ws1 = Param(2*sq .* randn(in_size1,layer_size)   .-sq)
-    ws2 = Param(2*sq .* randn(in_size2,layer_size)   .-sq)
-    wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-    layerX = LayerX(wf1, wf2, wfs, wi1, wi2, wd1, wd2, wds, wk1, wk2, wks, ws1, ws2, wss)
-layerX
+    layer = Layer(wf1, wf2, wfs, wi1, wi2, wk1, wk2, wks)
+layer
 end
 
-(layer::LayerX)(state, in_1, in_2) =
+(layer::Layer)(state, in_1, in_2) =
 begin
-    st_sq   = tanh.(state)
-
-    focus   = sigm.(in_1 * layer.wf1 + in_2 * layer.wf2 + st_sq * layer.wfs)
-    interm  = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + st_sq .* focus)
-
-    discard = sigm.(in_1 * layer.wd1 + in_2 * layer.wd2 + st_sq * layer.wds)
-    keep    = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + st_sq * layer.wks)
-    state  -= discard .* state
-    state  += keep .* interm
-
-    st_sq   = tanh.(state)
-    show    = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + st_sq * layer.wss)
-    out     = show .* st_sq
-
-[out, state]
+    attention = sigm.(in_1 * layer.wf1 + in_2 * layer.wf2 + state * layer.wfs)
+    remember  = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + state * layer.wks)
+    interm    = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state .* attention)
+    state = remember .* state + (1 .- remember) .* interm
+[state, state]
 end
+
+
 
 
 
 struct IS
-    layer_1::LayerS
-    layer_out::LayerS
+    layer_1::Layer
+    layer_out::Layer
 end
 
 IS(storage_size, hm_vectors, vector_size, layer_sizes, out_size) =
 begin
     is = IS(
-        LayerS(storage_size, hm_vectors*vector_size, layer_sizes[1]),
-        LayerS(storage_size, layer_sizes[end], out_size),
+        Layer(storage_size, hm_vectors*vector_size, layer_sizes[1]),
+        Layer(storage_size, layer_sizes[end], out_size),
     )
     state = [zeros(1, layer_sizes[1]),
              zeros(1, out_size)]
@@ -158,15 +69,15 @@ end
 
 
 struct GS
-    layer_1::LayerS
-    layer_out::LayerS
+    layer_1::Layer
+    layer_out::Layer
 end
 
 GS(in_size1, in_size2, layer_sizes, out_size) =
 begin
     gs = GS(
-        LayerS(in_size1, in_size2, layer_sizes[1]),
-        LayerS(in_size1, layer_sizes[end], out_size),
+        Layer(in_size1, in_size2, layer_sizes[1]),
+        Layer(in_size1, layer_sizes[1], out_size),
     )
     state = [zeros(1, layer_sizes[1]),
              zeros(1, out_size)]
@@ -176,21 +87,21 @@ end
 (gs::GS)(states, in_1, in_2) =
 begin
     out_1, state_1 = gs.layer_1(states[1], in_1, in_2)
-    out, state_out = gs.layer_out(states[end], in_1, out_1)
+    out, state_out = gs.layer_out(states[2], in_1, out_1)
 [out, [state_1, state_out]]
 end
 
 
 struct GO
-    layer_1::LayerS
-    layer_out::LayerS
+    layer_1::Layer
+    layer_out::Layer
 end
 
 GO(in_size1, in_size2, layer_sizes, out_size) =
 begin
     go = GO(
-        LayerS(in_size1, in_size2, layer_sizes[1]),
-        LayerS(in_size1, layer_sizes[end], out_size),
+        Layer(in_size1, in_size2, layer_sizes[1]),
+        Layer(in_size1, layer_sizes[1], out_size),
     )
     state = [zeros(1, layer_sizes[1]),
              zeros(1, out_size)]
@@ -200,9 +111,11 @@ end
 (go::GO)(states, in_1, in_2) =
 begin
     out_1, state_1 = go.layer_1(states[1], in_1, in_2)
-    out, state_out = go.layer_out(states[end], in_1, out_1)
+    out, state_out = go.layer_out(states[2], in_1, out_1)
 [out, [state_1, state_out]]
 end
+
+
 
 
 
@@ -272,12 +185,29 @@ end
 
 
 
+
+
 attend(dec_storage, enc_storages, enc_vectors) =
 begin
     similarities = soft([sum(dec_storage .* enc_storage) for enc_storage in enc_storages])
+    # similarities = [sum(dec_storage .* enc_storage) for enc_storage in enc_storages]
+# enc_vectors[argmax(reshape(similarities, length(similarities)))]
 sum([vec .* sim for (vec, sim) in zip(enc_vectors,similarities)])
 end
 
+
+transfer_states!(enc_state, dec_state) =
+begin
+    for (dec_module, enc_module) in zip(dec_state, enc_state)
+        for (dec_layer, enc_layer) in zip(dec_module, enc_module)
+            i = 0
+            for enc_neuron in enc_layer
+                i +=1
+                dec_layer[i] = enc_neuron
+            end
+        end
+    end
+end
 
 
 propogate(enc, dec, enc_state, x, length_y; dec_state=nothing) =
@@ -290,8 +220,12 @@ begin
         push!(enc_gs_time, enc_outs[1])
         push!(enc_go_time, enc_outs[2])
     end
+
+    # transfer_states!(enc_state, dec_state)
+
     dec_outs = enc_outs
-    if dec_state == nothing dec_state = enc_state end
+    # dec_outs = [zeros(1, storage_size), [zeros(1, vector_size) for i in 1:hm_vectors]]
+    if dec_state == nothing dec_state = enc_state end # [zeros(1, storage_size), [zeros(1, vector_size) for i in 1:hm_vectors]]
     dec_go_time = []
     for timestep in 1:length_y
         dec_outs, dec_state = dec(dec_state, dec_outs[1], dec_outs[2], enc_gs_time, enc_go_time)
@@ -301,6 +235,7 @@ dec_go_time
 end
 
 
+# using Statistics: norm
 
 grads(result, encoder, decoder) =
 begin
@@ -313,33 +248,13 @@ begin
                 for lfield in fieldnames(typeof(layer))
                     gradient = grad(result, getfield(layer, lfield))
                     push!(grads, gradient)
-                    # @info(mfield,nfield,lfield,norm(gradient))
+                    # @show norm(gradient)
                 end
             end
         end
     end
 grads
 end
-
-
-upd_rms!(encoder, decoder, grads, lr, accu_grads; alpha=0.9) =
-begin
-    i = 0
-    for model in [encoder, decoder]
-        for mfield in fieldnames(typeof(model))
-            net = getfield(model, mfield)
-            for nfield in fieldnames(typeof(net))
-                layer = getfield(net, nfield)
-                for lfield in fieldnames(typeof(layer))
-                    i +=1
-                    accu_grads[i] = alpha .* accu_grads[i] + (1 - alpha) .* grads[i].^2
-                    setfield!(layer, lfield, Param(getfield(layer, lfield) - grads[i].*lr./sqrt.(accu_grads[i].+1e-8)))
-                end
-            end
-        end
-    end
-end
-
 
 upd!(encoder, decoder, grads, lr) =
 begin
@@ -351,9 +266,9 @@ begin
                 layer = getfield(net, nfield)
                 for lfield in fieldnames(typeof(layer))
                     i +=1
-                    this_grad = grads[i]
-                    if this_grad != nothing
-                        setfield!(layer, lfield, Param(getfield(layer, lfield) - this_grad.*lr))
+                    g = grads[i]
+                    if g != nothing # TODO : rm dis check
+                        setfield!(layer, lfield, Param(getfield(layer, lfield) - g.*lr))
                     end
                 end
             end
@@ -361,28 +276,41 @@ begin
     end
 end
 
-
-
-relu(x) = max(0.0,x)
+upd_rms!(encoder, decoder, grads, lr, accu_grads; alpha=0.9) =
+begin
+    i = 0
+    for model in [encoder, decoder]
+        for mfield in fieldnames(typeof(model))
+            net = getfield(model, mfield)
+            for nfield in fieldnames(typeof(net))
+                layer = getfield(net, nfield)
+                for lfield in fieldnames(typeof(layer))
+                    i +=1
+                    accu_grads[i] = alpha .* accu_grads[i] .+ (1 - alpha) .* grads[i].^2
+                    setfield!(layer, lfield, Param(getfield(layer, lfield) - grads[i].*lr./sqrt.(accu_grads[i].+1e-8)))
+                end
+            end
+        end
+    end
+end
 
 
 soft(arr) = ((arr) -> arr/sum(arr))(exp.(arr))
 
-
 sqe(out, y) = sum(out .- y) ^2
 
-
 sequence_loss(out, y) =
-    sum([sum(sum([sqe(out_e, y_e) for (out_e,y_e) in zip(out_t,y_t)])) for (out_t,y_t) in zip(out, y)])
-
-
-
-drop(arr; rate=0.1) = # rand() < rate ? x : 0.0
 begin
-    for i in 1:length(arr)
-        if rand() < rate
-            array[i] *= 0
-        end
-    end
-array
+    sum([sum(sum([sqe(out_e, y_e) for (out_e,y_e) in zip(out_t,y_t)])) for (out_t,y_t) in zip(out, y)])
+end
+
+
+drop(x; rate=0.1) = rand() < rate ? x : 0.0
+begin
+    # for i in 1:length(array):
+    #     if rand() < rate
+    #         array[i]
+#     new_arr = [rand() < rate ? 0.0 : e for e in array]
+# reshape(new_arr, size(array))
+# array
 end

@@ -1,5 +1,7 @@
 using Distributed: @everywhere, @distributed, addprocs; addprocs(3)
-@everywhere include("GSTM_v2.jl")
+@everywhere using Distributed: @spawnat
+@everywhere include("GSTM_vgru.jl")
+using Statistics: norm
 
 
 
@@ -14,10 +16,10 @@ const go_layers = [55]
 
 
 const max_t     = 100
-const hm_data   = 50
+const hm_data   = 20
 
-const lr        = 1e-5
-const hm_epochs = 250
+const lr        = 1e-4
+const hm_epochs = 100
 
 
 
@@ -92,30 +94,107 @@ begin
         print("Epoch ", epoch, ": ")
 
         loss = 0.0
-        prev_loss = 0.0
 
-        for (g,l) in
+        # for (g,l) in
+        #
+        #     (@distributed (vcat) for (x,y) in shuffle(data)
+        #
+        #         d = @diff sequence_loss(
+        #             propogate(encoder, decoder, enc_zerostate, x, length(y)),
+        #             y
+        #         )
+        #
+        #         grads(d, encoder, decoder), value(d)
+        #
+        #     end)
+        #
+        #     upd!(encoder, decoder, g, lr)
+        #     #upd_rms!(encoder, decoder, g, lr, accu_grads, alpha=.9)
+        #     loss += sum(l)
+        #
+        #     for e in g
+        #         @show norm(e)
+        #     end
+        #
+        # end
 
-            (@distributed (vcat) for (x,y) in shuffle(data)
+        results =
+            @distributed (vcat) for (x,y) in shuffle(data)
 
                 d = @diff sequence_loss(
-                    propogate(encoder, decoder, enc_zerostate, x, length(y)),
-                    y
+                        propogate(encoder, decoder, enc_zerostate, x, length(y)),
+                        y
                 )
+
+                @spawnat 1 print("/")
 
                 grads(d, encoder, decoder), value(d)
 
-            end)
+            end ; print("\n")
 
-            upd!(encoder, decoder, g, lr)
-            #upd_rms!(encoder, decoder, g, lr, accu_grads, alpha=.9)
-            loss += sum(l)
+        gs = [zeros(size(e)) for e in results[1][1]]
 
-        end ; @show loss ; push!(losses, loss)
+        for (g,l) in results
+
+            loss += l
+            gs   += g
+
+        end
+
+        upd!(encoder, decoder, gs, lr)
+
+        for (name,g) in zip(names, gs)
+
+            # g = trunc(Int, norm(g))
+            # @show name..., norm(g)
+            # @info(name, norm(g))
+
+        end
+
+        # show_details(encoder, decoder)
+
+        @show loss ; push!(losses, loss)
+
 
     end
 [encoder, decoder, losses]
 end
+
+
+
+names = []
+for model in [encoder, decoder]
+    m = typeof(model)
+    for mfield in fieldnames(typeof(model))
+        net = getfield(model, mfield)
+        for nfield in fieldnames(typeof(net))
+            layer = getfield(net, nfield)
+            for lfield in fieldnames(typeof(layer))
+                push!(names, [m, mfield, nfield, lfield])
+            end
+        end
+    end
+end
+
+
+show_details(enc, dec) =
+begin
+    for model in [enc, dec]
+        m = typeof(model)
+        for mfield in fieldnames(typeof(model))
+            net = getfield(model, mfield)
+            for nfield in fieldnames(typeof(net))
+                layer = getfield(net, nfield)
+                for lfield in fieldnames(typeof(layer))
+                    w_norm = trunc(Int, norm(getfield(layer, lfield)))
+                    @info((m, mfield, nfield, lfield), w_norm)
+                end
+            end
+        end
+    end
+end
+
+
 
 
 
