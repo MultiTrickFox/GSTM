@@ -2,7 +2,8 @@ using Knet: @diff, Param, value, grad
 using Knet: sigm, tanh, softmax
 
 
-model_type  = "LSTM"
+
+model_types = ["GSTM"]
 
 input_size  = 52
 hiddens     = [86]
@@ -13,7 +14,8 @@ hm_data = 500
 seq_len = 200
 
 hm_epochs = 20
-lr        = .01
+lr        = .001
+
 
 
 mk_model(in,hiddens,out,type) =
@@ -46,10 +48,11 @@ begin
     end
     deleteat!(outs, 1)
     for layer in model
-        setfield!(layer, :state, zeros(1,size(getfield(layer, :wfs))[end]))
+        setfield!(layer, :state, zeros(1,size(getfield(layer, :wks))[end]))
     end
 outs
 end
+
 
 
 mutable struct GRU
@@ -116,7 +119,7 @@ begin
     wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
 
     wii = Param(2*sq .* randn(in_size,layer_size)    .-sq)
-    wis = Param(2*sq .* randn(layer_size,layer_size)   .-sq)
+    wis = Param(2*sq .* randn(layer_size,layer_size) .-sq)
 
     state = zeros(1,layer_size)
     layer = LSTM(wki, wks, wfi, wfs, wsi, wss, wii, wis, state)
@@ -130,19 +133,70 @@ begin
     show   = sigm.(in * layer.wsi + layer.state * layer.wks)
     interm = tanh.(in * layer.wii + layer.state * layer.wis)
     layer.state = forget .* layer.state + keep .* interm
-    out = show .* layer.state
+    out = show .* tanh.(layer.state)
 out
 end
 
 
 
-model_type = (@eval $(Symbol(model_type)))
+mutable struct GSTM
+    wfi::Param
+    wfs::Param
+    wri::Param
+    wki::Param
+    wks::Param
+    wsi::Param
+    wss::Param
+    state
+end
+
+GSTM(in_size, layer_size) =
+begin
+    sq = sqrt(2/(in_size+layer_size))
+
+    wfi = Param(2*sq .* randn(in_size,layer_size)    .-sq)
+    wfs = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+
+    wri = Param(2*sq .* randn(in_size,layer_size)    .-sq)
+
+    wki = Param(2*sq .* randn(in_size,layer_size)    .-sq)
+    wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+
+    wsi = Param(2*sq .* randn(in_size,layer_size)    .-sq)
+    wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+
+    state = zeros(1,layer_size)
+    layer = GSTM(wfi, wfs, wri, wki, wks, wsi, wss, state)
+layer
+end
+
+(layer::GSTM)(in) =
+begin
+    focus    = sigm.(in * layer.wfi + layer.state * layer.wfs)
+    reaction = tanh.(in * layer.wri + layer.state .* focus)
+    keep     = sigm.(in * layer.wki + layer.state * layer.wks)
+    show     = sigm.(in * layer.wsi + layer.state * layer.wss)
+
+    layer.state = reaction .* keep + layer.state .* (1 .- keep)
+    out = reaction .* show
+out
+end
+
+
+
+
+
+
 
 main() =
-begin
+for model_name in model_types
+    model_type = (@eval $(Symbol(model_name)))
+
     model = mk_model(input_size,hiddens,output_size,model_type)
 
     data = [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]
+
+    losses = []
 
     for e in 1:hm_epochs
 
@@ -169,8 +223,17 @@ begin
                 end
             end
 
-        end
+        end ; push!(losses, loss)
     println("epoch $e loss: $loss")
     end
-end
-main()
+
+
+    println("Model $model_name summary:")
+    for loss in[losses[1], losses[trunc(Int,length(losses)*1/4)], losses[trunc(Int,length(losses)*2/4)], losses[trunc(Int,length(losses)*3/4)], losses[end]]
+        println(loss)
+    end
+
+    # TODO : graph here.
+
+
+end ; main()
