@@ -2,16 +2,18 @@ using Knet: @diff, Param, value, grad
 using Knet: sigm, tanh, softmax
 
 
-input_size  = 42
+model_type  = "LSTM"
+
+input_size  = 52
 hiddens     = [86]
 output_size = 52
 
 
-hm_data = 50
-seq_len = 100
+hm_data = 500
+seq_len = 200
 
-hm_epochs = 10
-lr        = .001
+hm_epochs = 20
+lr        = .01
 
 
 mk_model(in,hiddens,out,type) =
@@ -114,7 +116,7 @@ begin
     wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
 
     wii = Param(2*sq .* randn(in_size,layer_size)    .-sq)
-    wis = Param(2*sq .* randn(in_size,layer_size)   .-sq)
+    wis = Param(2*sq .* randn(layer_size,layer_size)   .-sq)
 
     state = zeros(1,layer_size)
     layer = LSTM(wki, wks, wfi, wfs, wsi, wss, wii, wis, state)
@@ -134,7 +136,7 @@ end
 
 
 
-model_type  = GRU
+model_type = (@eval $(Symbol(model_type)))
 
 main() =
 begin
