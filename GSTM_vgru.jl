@@ -247,6 +247,9 @@ begin
                 layer = getfield(net, nfield)
                 for lfield in fieldnames(typeof(layer))
                     gradient = grad(result, getfield(layer, lfield))
+                    # if gradient > 0
+                    #     gradient = 1.0
+                    # end
                     push!(grads, gradient)
                     # @show norm(gradient)
                 end
@@ -266,10 +269,7 @@ begin
                 layer = getfield(net, nfield)
                 for lfield in fieldnames(typeof(layer))
                     i +=1
-                    g = grads[i]
-                    if g != nothing # TODO : rm dis check
-                        setfield!(layer, lfield, Param(getfield(layer, lfield) - g.*lr))
-                    end
+                    setfield!(layer, lfield, Param(getfield(layer, lfield) - grads[i].*lr))
                 end
             end
         end

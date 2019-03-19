@@ -33,12 +33,12 @@ end
 
 (layer::Layer)(state, in_1, in_2) =
 begin
-    sq_st  = tanh.(state)
-    interm = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + sq_st * layer.wis)
-    keep   = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + sq_st * layer.wks)
-    show   = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + sq_st * layer.wss)
-    state += interm .* keep
-    out    = interm .* show
+    state_sq = tanh.(state)
+    interm = tanh.(in_1 * layer.wi1 + in_2 * layer.wi2 + state_sq * layer.wis)
+    keep   = sigm.(in_1 * layer.wk1 + in_2 * layer.wk2 + state_sq * layer.wks)
+    show   = sigm.(in_1 * layer.ws1 + in_2 * layer.ws2 + state_sq * layer.wss)
+    state += keep .* interm
+    out    = show .* interm
 [out, state]
 end
 
@@ -134,15 +134,15 @@ end
 
 
 struct IS
-    layer_1::LayerS
-    layer_out::LayerS
+    layer_1::Layer
+    layer_out::Layer
 end
 
 IS(storage_size, hm_vectors, vector_size, layer_sizes, out_size) =
 begin
     is = IS(
-        LayerS(storage_size, hm_vectors*vector_size, layer_sizes[1]),
-        LayerS(storage_size, layer_sizes[end], out_size),
+        Layer(storage_size, hm_vectors*vector_size, layer_sizes[1]),
+        Layer(storage_size, layer_sizes[end], out_size),
     )
     state = [zeros(1, layer_sizes[1]),
              zeros(1, out_size)]
@@ -158,15 +158,15 @@ end
 
 
 struct GS
-    layer_1::LayerS
-    layer_out::LayerS
+    layer_1::Layer
+    layer_out::Layer
 end
 
 GS(in_size1, in_size2, layer_sizes, out_size) =
 begin
     gs = GS(
-        LayerS(in_size1, in_size2, layer_sizes[1]),
-        LayerS(in_size1, layer_sizes[end], out_size),
+        Layer(in_size1, in_size2, layer_sizes[1]),
+        Layer(in_size1, layer_sizes[end], out_size),
     )
     state = [zeros(1, layer_sizes[1]),
              zeros(1, out_size)]
@@ -182,15 +182,15 @@ end
 
 
 struct GO
-    layer_1::LayerS
-    layer_out::LayerS
+    layer_1::Layer
+    layer_out::Layer
 end
 
 GO(in_size1, in_size2, layer_sizes, out_size) =
 begin
     go = GO(
-        LayerS(in_size1, in_size2, layer_sizes[1]),
-        LayerS(in_size1, layer_sizes[end], out_size),
+        Layer(in_size1, in_size2, layer_sizes[1]),
+        Layer(in_size1, layer_sizes[end], out_size),
     )
     state = [zeros(1, layer_sizes[1]),
              zeros(1, out_size)]
@@ -312,6 +312,9 @@ begin
                 layer = getfield(net, nfield)
                 for lfield in fieldnames(typeof(layer))
                     gradient = grad(result, getfield(layer, lfield))
+                    # if gradient > 0
+                    #     gradient = 1.0
+                    # end
                     push!(grads, gradient)
                     # @info(mfield,nfield,lfield,norm(gradient))
                 end

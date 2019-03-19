@@ -1,6 +1,6 @@
 using Distributed: @everywhere, @distributed, addprocs; addprocs(3)
 @everywhere using Distributed: @spawnat
-@everywhere include("GSTM_vgru.jl")
+@everywhere include("GSTM_v2.jl")
 using Statistics: norm
 
 
@@ -10,15 +10,15 @@ const vector_size  = 13
 const storage_size = 25
 
 
-const is_layers = [85]
-const gs_layers = [45]
-const go_layers = [55]
+const is_layers = [30]
+const gs_layers = [35]
+const go_layers = [35]
 
 
 const max_t     = 100
 const hm_data   = 20
 
-const lr        = 1e-4
+const lr        = .0005
 const hm_epochs = 100
 
 
@@ -143,13 +143,13 @@ begin
 
         upd!(encoder, decoder, gs, lr)
 
-        for (name,g) in zip(names, gs)
-
-            # g = trunc(Int, norm(g))
-            # @show name..., norm(g)
-            # @info(name, norm(g))
-
-        end
+        # for (name,g) in zip(names, gs)
+        #
+        #     # g = trunc(Int, norm(g))
+        #     # @show name..., norm(g)
+        #     # @info(name, norm(g))
+        #c
+        # end
 
         # show_details(encoder, decoder)
 
