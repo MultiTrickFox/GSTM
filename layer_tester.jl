@@ -1,4 +1,5 @@
-using Distributed: @everywhere, @distributed
+# using Distributed: @everywhere, @distributed, addprocs, procs
+# if length(procs) == 1 addprocs(1) end TODO : separate module for distributed test
 using Knet: @diff, Param, value, grad
 using Knet: sigm, tanh, softmax
 
@@ -11,15 +12,17 @@ hiddens     = [20]
 output_size = 42
 
 
-hm_data = 1_000
+hm_data = 500
 seq_len = 500
 
 hm_epochs = 100
 lr        = .001
 
 
-layer_test = [[2], [5], [8], [10], [20], [22], [25], [28], [30], [32], [35], [40], [45], [50], [52], [55], [60], [64], [68]]#, [72], [74], [80]]
+
+layer_test = [[2], [5], [8], [10], [12], [16], [20], [22], [25], [28], [30], [32], [35], [40], [45], [48], [50], [52], [58], [60], [64], [68], [72], [74], [80], [84], [96], [100]]
 hm_trials  = 20
+
 
 
 mk_model(in,hiddens,out,type) =
@@ -42,15 +45,14 @@ end
 
 prop_model(model, seq) =
 begin
-    out = seq[1]
     outs = []
-    for t in 1:length(seq)+1
+    for t in seq
+        out = t
         for layer in model
-            out = layer(out) # if force_teach layer(seq[i+1])
+            out = layer(out)
         end
         push!(outs, out)
     end
-    deleteat!(outs, 1)
     for layer in model
         setfield!(layer, :state, zeros(1,size(getfield(layer, :wfi))[end]))
     end
@@ -198,13 +200,11 @@ end
 
 verbose = false
 
-main(model_name) =
+main(model_name, data) =
 begin
     model_type = (@eval $(Symbol(model_name)))
 
     model = mk_model(input_size,hiddens,output_size,model_type)
-
-    data = [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]
 
     losses = []
 
@@ -260,14 +260,19 @@ end
 
 
 
+
+
+# runner of main. main of main
+
 for model_type in model_types
     println("\n\t> Running: $model_type \n")
     if length(layer_test) > 0
         progresses = [[0.0,0.0] for _ in 1:length(layer_test)]
         for _ in 1:hm_trials
+            data = [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]
             for (i,l) in enumerate(layer_test)
                 hiddens = l ; println("layers: $hiddens")
-                loss1, lossend = main(model_type)
+                loss1, lossend = main(model_type, data)
                 progresses[i][1] += loss1
                 progresses[i][end] += lossend
             end
@@ -282,9 +287,8 @@ for model_type in model_types
 
         println("\n Progress list: \n")
         for (i,p) in enumerate(progresses)
-            println("$model_type $(hiddens[i]) $((1-p[end]/p[1])*100)")
-            println("$p\n")
+            println("$model_type $(hiddens[i]) : $(p[1]) to $(p[end]) : $((1-p[end]/p[1])*100)")
         end
 
-    else main(model_type) end
-end
+    else main(model_type, [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]) end
+end ; println("\n\ndone.\n")
