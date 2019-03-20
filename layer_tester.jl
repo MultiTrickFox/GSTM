@@ -3,19 +3,22 @@ using Knet: sigm, tanh, softmax
 
 
 
-model_types = ["GSTM"]
+model_types = ["GRU"]
 
-input_size  = 52
-hiddens     = [86]
-output_size = 52
+input_size  = 42
+hiddens     = [20]
+output_size = 42
 
 
-hm_data = 500
-seq_len = 200
+hm_data = 200
+seq_len = 500
 
 hm_epochs = 20
 lr        = .001
 
+
+layer_test = [[10], [20], [22], [25], [28], [30], [32], [35], [40], [45], [50], [52], [55], [60]]
+hm_trials  = 20
 
 
 mk_model(in,hiddens,out,type) =
@@ -48,7 +51,7 @@ begin
     end
     deleteat!(outs, 1)
     for layer in model
-        setfield!(layer, :state, zeros(1,size(getfield(layer, :wks))[end]))
+        setfield!(layer, :state, zeros(1,size(getfield(layer, :wfi))[end]))
     end
 outs
 end
@@ -143,8 +146,10 @@ mutable struct GSTM
     wfi::Param
     wfs::Param
     wri::Param
-    wki::Param
-    wks::Param
+    wk1i::Param
+    wk1s::Param
+    wk2i::Param
+    wk2s::Param
     wsi::Param
     wss::Param
     state
@@ -159,14 +164,17 @@ begin
 
     wri = Param(2*sq .* randn(in_size,layer_size)    .-sq)
 
-    wki = Param(2*sq .* randn(in_size,layer_size)    .-sq)
-    wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    wk1i = Param(2*sq .* randn(in_size,layer_size)    .-sq)
+    wk1s = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+
+    wk2i = Param(2*sq .* randn(in_size,layer_size)    .-sq)
+    wk2s = Param(2*sq .* randn(layer_size,layer_size) .-sq)
 
     wsi = Param(2*sq .* randn(in_size,layer_size)    .-sq)
     wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
 
     state = zeros(1,layer_size)
-    layer = GSTM(wfi, wfs, wri, wki, wks, wsi, wss, state)
+    layer = GSTM(wfi, wfs, wri, wk1i, wk1s, wk2i, wk2s, wsi, wss, state)
 layer
 end
 
@@ -174,11 +182,12 @@ end
 begin
     focus    = sigm.(in * layer.wfi + layer.state * layer.wfs)
     reaction = tanh.(in * layer.wri + layer.state .* focus)
-    keep     = sigm.(in * layer.wki + layer.state * layer.wks)
+    keep1    = sigm.(in * layer.wk1i + layer.state * layer.wk1s)
+    keep2    = sigm.(in * layer.wk2i + layer.state * layer.wk2s)
     show     = sigm.(in * layer.wsi + layer.state * layer.wss)
 
-    layer.state = reaction .* keep + layer.state .* (1 .- keep)
-    out = reaction .* show
+    layer.state = reaction .* keep1 + layer.state .* keep2
+    out = reaction .* show # (show .* reaction) .* layer.state
 out
 end
 
@@ -186,11 +195,12 @@ end
 
 
 
+verbose = false
 
-
-main() =
-for model_name in model_types
+main(model_name) =
+begin # for model_name in model_types
     model_type = (@eval $(Symbol(model_name)))
+    println("Running: $model_name")
 
     model = mk_model(input_size,hiddens,output_size,model_type)
 
@@ -224,16 +234,60 @@ for model_name in model_types
             end
 
         end ; push!(losses, loss)
-    println("epoch $e loss: $loss")
+    verbose ? println("epoch $e loss: $loss") : ()
     end
 
 
-    println("Model $model_name summary:")
+    prev_loss = 999_999_999
+    for (e,loss) in enumerate(losses)
+        if loss > prev_loss
+            println("bad loss: ep $e \n \t $prev_loss to $loss")
+        end
+        prev_loss = loss
+    end
+
+    println("\n\t\t $model_name summary:")
+
     for loss in[losses[1], losses[trunc(Int,length(losses)*1/4)], losses[trunc(Int,length(losses)*2/4)], losses[trunc(Int,length(losses)*3/4)], losses[end]]
         println(loss)
-    end
+    end ; println(" ")
+
 
     # TODO : graph here.
 
+(losses[1],losses[end])
+end
 
-end ; main()
+
+
+for model_type in model_types
+    if length(layer_test) > 0
+        progresses = [[0.0,0.0] for _ in 1:length(layer_test)]
+        for _ in 1:hm_trials
+            for (i,l) in enumerate(layer_test)
+                hiddens = l ; println("layers: $hiddens")
+                loss1, lossend = main(model_type)
+                progresses[i][1] += loss1
+                progresses[i][end] += lossend
+            end
+            progs = []
+            for progress in progresses
+                push!(progs,(1-progress[end]/progress[1])*100)
+            end
+
+            fittest = argmax(progs)
+            println("** Current Optimal layer size: $(layer_test[fittest]) \n")
+
+        end
+        progs = []
+        for progress in progresses
+            progress[1] /= hm_trials
+            progress[end] /= hm_trials
+            push!(progs,(1-progress[end]/progress[1])*100)
+        end
+
+        fittest = argmax(progs)
+        println(">> General Optimal layer size: $(layer_test[fittest]) \n")
+
+    else main(model_type) end
+end
