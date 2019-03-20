@@ -200,7 +200,7 @@ end
 
 verbose = false
 
-main(model_name, data) =
+main(model_name, data; hiddens=hiddens) =
 begin
     model_type = (@eval $(Symbol(model_name)))
 
@@ -271,8 +271,8 @@ for model_type in model_types
         for _ in 1:hm_trials
             data = [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]
             for (i,l) in enumerate(layer_test)
-                hiddens = l ; println("layers: $hiddens")
-                loss1, lossend = main(model_type, data)
+                println("layers: $l")
+                loss1, lossend = main(model_type, data, hiddens=l)
                 progresses[i][1] += loss1
                 progresses[i][end] += lossend
             end
