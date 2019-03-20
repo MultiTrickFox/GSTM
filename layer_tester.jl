@@ -1,3 +1,4 @@
+using Distributed: @everywhere, @distributed
 using Knet: @diff, Param, value, grad
 using Knet: sigm, tanh, softmax
 
@@ -10,14 +11,14 @@ hiddens     = [20]
 output_size = 42
 
 
-hm_data = 200
+hm_data = 1_000
 seq_len = 500
 
-hm_epochs = 20
+hm_epochs = 100
 lr        = .001
 
 
-layer_test = [[10], [20], [22], [25], [28], [30], [32], [35], [40], [45], [50], [52], [55], [60]]
+layer_test = [[2], [5], [8], [10], [20], [22], [25], [28], [30], [32], [35], [40], [45], [50], [52], [55], [60], [64], [68]]#, [72], [74], [80]]
 hm_trials  = 20
 
 
@@ -198,9 +199,8 @@ end
 verbose = false
 
 main(model_name) =
-begin # for model_name in model_types
+begin
     model_type = (@eval $(Symbol(model_name)))
-    println("Running: $model_name")
 
     model = mk_model(input_size,hiddens,output_size,model_type)
 
@@ -238,15 +238,15 @@ begin # for model_name in model_types
     end
 
 
-    prev_loss = 999_999_999
+    verbose ? (begin prev_loss = 999_999_999
     for (e,loss) in enumerate(losses)
         if loss > prev_loss
             println("bad loss: ep $e \n \t $prev_loss to $loss")
         end
         prev_loss = loss
-    end
+    end end) : ()
 
-    println("\n\t\t $model_name summary:")
+    verbose ? println("\n\t\t $model_name summary:") : ()
 
     for loss in[losses[1], losses[trunc(Int,length(losses)*1/4)], losses[trunc(Int,length(losses)*2/4)], losses[trunc(Int,length(losses)*3/4)], losses[end]]
         println(loss)
@@ -261,6 +261,7 @@ end
 
 
 for model_type in model_types
+    println("\n\t> Running: $model_type \n")
     if length(layer_test) > 0
         progresses = [[0.0,0.0] for _ in 1:length(layer_test)]
         for _ in 1:hm_trials
@@ -270,24 +271,20 @@ for model_type in model_types
                 progresses[i][1] += loss1
                 progresses[i][end] += lossend
             end
-            progs = []
-            for progress in progresses
-                push!(progs,(1-progress[end]/progress[1])*100)
-            end
 
-            fittest = argmax(progs)
+            fittest = argmax([(1-progress[end]/progress[1])*100 for progress in progresses])
             println("** Current Optimal layer size: $(layer_test[fittest]) \n")
 
         end
-        progs = []
-        for progress in progresses
-            progress[1] /= hm_trials
-            progress[end] /= hm_trials
-            push!(progs,(1-progress[end]/progress[1])*100)
-        end
 
-        fittest = argmax(progs)
+        fittest = argmax([(1-progress[end]/progress[1])*100 for progress in progresses])
         println(">> General Optimal layer size: $(layer_test[fittest]) \n")
+
+        println("\n Progress list: \n")
+        for (i,p) in enumerate(progresses)
+            println("$model_type $(hiddens[i]) $((1-p[end]/p[1])*100)")
+            println("$p\n")
+        end
 
     else main(model_type) end
 end
