@@ -11,14 +11,14 @@ if length(procs()) == 1 addprocs(3) end
 model_types = ["GRU","GSTM"]
 
 input_size  = 2
-hiddens     = [20, 15, 10]
+hiddens     = [2]
 output_size = 1
 
 
-hm_data = 2_000
-hm_test = 200
+hm_data = 1_000
+hm_test = 100
 
-seq_len = 200 # 500 # 1_000 # 2_000
+seq_len = 20 # 50 # 100 # 200 # 500 # 1_000 # 2_000
 
 hm_epochs = 50
 lr        = .01
@@ -247,19 +247,30 @@ begin
 
             end
 
-            [d]
-
-        end
-
-        for d in results
-
-            loss += value(d)
+            grads = []
 
             i = 0
             for layer in model
                 for param in fieldnames(model_type)
                     i +=1
                     g = grad(d,getfield(layer, param))
+                    push!(grads, g)
+                end
+            end
+
+            grads, value(d)
+
+        end
+
+        for (grads, l) in results
+
+            loss += l
+
+            i = 0
+            for layer in model
+                for param in fieldnames(model_type)
+                    i +=1
+                    g = grads[i]
                     if g != nothing
 
                         g = grad_clip.(g)
