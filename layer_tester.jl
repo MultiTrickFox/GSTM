@@ -5,24 +5,31 @@ using Knet: sigm, tanh, softmax
 
 
 
-model_types = ["GRU"]
+model_types = ["GRU","GSTM"]
 
-input_size  = 52
-hiddens     = [20]
-output_size = 52
+input_size  = 2
+hiddens     = [20, 15, 10]
+output_size = 1
 
 
-hm_data = 500
+hm_data = 2_000
+hm_test = 200
+
 seq_len = 500
 
-hm_epochs = 100
-lr        = .001
+hm_epochs = 50
+lr        = .01
+
+
+alpha_moments = 0.9
+alpha_accugrads = 0.999
 
 
 
-layer_test = [[10], [12], [16], [20], [25], [28], [30], [32], [36], [40], [45], [48], [50], [52], [56], [58], [60], [62], [64], [68], [72], [74], [80], [84], [88], [92], [96], [100]]
-hm_trials  = 20
+layer_test = []#[10], [12], [16], [20], [25], [28], [30], [32], [36], [40], [45], [48], [50], [52], [56], [58], [60], [62], [64], [68], [72], [74], [80], [84], [88], [92], [96], [100]]
+hm_trials  = 1
 
+verbose = true
 
 
 mk_model(in,hiddens,out,type) =
@@ -149,10 +156,8 @@ mutable struct GSTM
     wfi::Param
     wfs::Param
     wri::Param
-    wk1i::Param
-    wk1s::Param
-    wk2i::Param
-    wk2s::Param
+    wki::Param
+    wks::Param
     wsi::Param
     wss::Param
     state
@@ -167,44 +172,52 @@ begin
 
     wri = Param(2*sq .* randn(in_size,layer_size)    .-sq)
 
-    wk1i = Param(2*sq .* randn(in_size,layer_size)    .-sq)
-    wk1s = Param(2*sq .* randn(layer_size,layer_size) .-sq)
-
-    wk2i = Param(2*sq .* randn(in_size,layer_size)    .-sq)
-    wk2s = Param(2*sq .* randn(layer_size,layer_size) .-sq)
+    wki = Param(2*sq .* randn(in_size,layer_size)    .-sq)
+    wks = Param(2*sq .* randn(layer_size,layer_size) .-sq)
 
     wsi = Param(2*sq .* randn(in_size,layer_size)    .-sq)
     wss = Param(2*sq .* randn(layer_size,layer_size) .-sq)
 
     state = zeros(1,layer_size)
-    layer = GSTM(wfi, wfs, wri, wk1i, wk1s, wk2i, wk2s, wsi, wss, state)
+    layer = GSTM(wfi, wfs, wri, wki, wks, wsi, wss, state)
 layer
 end
 
 (layer::GSTM)(in) =
 begin
-    focus    = sigm.(in * layer.wfi + layer.state * layer.wfs)
-    reaction = tanh.(in * layer.wri + layer.state .* focus)
-    keep1    = sigm.(in * layer.wk1i + layer.state * layer.wk1s)
-    keep2    = sigm.(in * layer.wk2i + layer.state * layer.wk2s)
-    show     = sigm.(in * layer.wsi + layer.state * layer.wss)
+    st = tanh.(layer.state)
+    focus    = sigm.(in * layer.wfi + st * layer.wfs)
+    reaction = tanh.(in * layer.wri + st .* focus)
+    keep     = sigm.(in * layer.wki + st * layer.wks)
+    show     = sigm.(in * layer.wsi + st * layer.wss)
 
-    layer.state = reaction .* keep1 + layer.state .* keep2
-    out = reaction .* show # (show .* reaction) .* layer.state
+    layer.state += reaction .* keep
+    out = reaction .* show
 out
 end
 
 
 
+grad_clip(x) =
+if x < -1
+    -1.0
+elseif x > 1
+    1.0
+else
+    x
+end
 
 
-verbose = false
+
 
 main(model_name, data; hiddens=hiddens) =
 begin
     model_type = (@eval $(Symbol(model_name)))
 
     model = mk_model(input_size,hiddens,output_size,model_type)
+
+    moments = [zeros(size(getfield(layer,param))) for layer in model for param in fieldnames(typeof(layer))]
+    accugrads = [zeros(size(getfield(layer,param))) for layer in model for param in fieldnames(typeof(layer))]
 
     losses = []
 
@@ -216,41 +229,74 @@ begin
 
             d = @diff begin
 
-                input  = seq[1:end-1]
-                label  = seq[2:end]
-                output = prop_model(model,input)
+                # input  = seq[1:end-1]
+                # label  = seq[2:end]
+
+                input = seq[1]
+                label = seq[2]
+
+                output = prop_model(model,input)[end]
                 sum(sum([(lbl-out).^2 for (lbl,out) in zip(label,output)]))
             end
 
             loss += value(d)
 
+            i = 0
             for layer in model
                 for param in fieldnames(model_type)
+                    i +=1
                     g = grad(d,getfield(layer, param))
                     if g != nothing
-                        setfield!(layer, param, Param(getfield(layer, param)-lr.*g))
+
+                        g = grad_clip.(g)
+
+                        moments[i] = alpha_moments * moments[i] + (1 - alpha_moments) * g
+                        accugrads[i] = alpha_accugrads * accugrads[i] + (1 - alpha_accugrads) * g .^2
+
+                        moment_hat = moments[i] / (1 - alpha_moments .^ e)
+                        accugrad_hat = accugrads[i] / (1 - alpha_accugrads .^ e)
+
+                        setfield!(layer, param, Param(getfield(layer, param)-lr.*moment_hat/sqrt(sum(accugrad_hat) + 1e-8)))
+
+                        # setfield!(layer, param, Param(getfield(layer, param)-lr.*g))
                     end
+
                 end
             end
 
         end ; push!(losses, loss)
     verbose ? println("epoch $e loss: $loss") : ()
+
+    # for (inp,lbl) in test_set
+    #     println("model prediction: $(sum(prop_model(model,inp)[end]))")
+    #     println("actual result: $lbl")
+    # end
+
+    test_score = sum([abs(lbl - sum(prop_model(model,inp)[end])) < .001 ? 1 : 0 for (inp,lbl) in test_set])
+
+    println("test acc: $(test_score/hm_test*100)")
+
+
     end
 
 
-    verbose ? (begin prev_loss = 999_999_999
-    for (e,loss) in enumerate(losses)
-        if loss > prev_loss
-            println("bad loss: ep $e \n \t $prev_loss to $loss")
-        end
-        prev_loss = loss
-    end end) : ()
+    # verbose ? (begin prev_loss = 999_999_999
+    # for (e,loss) in enumerate(losses)
+    #     if loss > prev_loss
+    #         println("bad loss: ep $e \n \t $prev_loss to $loss")
+    #     end
+    #     prev_loss = loss
+    # end end) : ()
 
     verbose ? println("\n\t\t $model_name summary:") : ()
 
     for loss in[losses[1], losses[trunc(Int,length(losses)*1/4)], losses[trunc(Int,length(losses)*2/4)], losses[trunc(Int,length(losses)*3/4)], losses[end]]
         println(loss)
-    end ; println(" ")
+    end ;
+
+    # verbose ? println("progress : $((1-losses[end]/losses[1])*100)") : ()
+
+    println(" ")
 
 
     # TODO : graph here.
@@ -263,6 +309,35 @@ end
 
 
 # runner of main. main of main
+
+d = [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]
+
+
+d = []
+for i in 1:hm_data
+    x = []
+    for t in seq_len
+        arr = [randn(), randn() < 0.5 ? 0 : 1]
+        push!(x, reshape(arr, 1, length(arr)))
+    end
+    y = sum(e1*e2 for (e1,e2) in x)
+    push!(d, [x,y])
+end
+
+test_set = []
+for i in 1:hm_test
+    x = []
+    for t in seq_len
+        arr = [randn(), randn() < 0.5 ? 0 : 1]
+        push!(x, reshape(arr, 1, length(arr)))
+    end
+    y = sum(e1*e2 for (e1,e2) in x)
+    push!(test_set, [x,y])
+end
+
+
+
+
 
 for model_type in model_types
     println("\n\t> Running: $model_type \n")
@@ -290,5 +365,5 @@ for model_type in model_types
             println("$model_type $(hiddens[i]) : $(p[1]) to $(p[end]) : $((1-p[end]/p[1])*100)")
         end
 
-    else main(model_type, [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]) end
+    else main(model_type, d) end
 end ; println("\n\ndone.\n")
