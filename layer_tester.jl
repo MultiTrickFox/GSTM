@@ -1,7 +1,10 @@
-# using Distributed: @everywhere, @distributed, addprocs, procs
-# if length(procs) == 1 addprocs(1) end TODO : separate module for distributed test
-using Knet: @diff, Param, value, grad
-using Knet: sigm, tanh, softmax
+using Distributed: @everywhere, @distributed, addprocs, procs
+if length(procs()) == 1 addprocs(3) end
+
+@everywhere using Knet: @diff, Param, value, grad
+@everywhere using Knet: sigm, tanh, softmax
+# using Gadfly: plot
+# using Statistics: norm
 
 
 
@@ -15,7 +18,7 @@ output_size = 1
 hm_data = 2_000
 hm_test = 200
 
-seq_len = 500
+seq_len = 200 # 500 # 1_000 # 2_000
 
 hm_epochs = 50
 lr        = .01
@@ -50,7 +53,7 @@ model
 end
 
 
-prop_model(model, seq) =
+@everywhere prop_model(model, seq) =
 begin
     outs = []
     for t in seq
@@ -68,7 +71,7 @@ end
 
 
 
-mutable struct GRU
+@everywhere mutable struct GRU
     wfi::Param
     wfs::Param
     wii::Param
@@ -77,7 +80,7 @@ mutable struct GRU
     state
 end
 
-GRU(in_size, layer_size) =
+@everywhere GRU(in_size, layer_size) =
 begin
     sq = sqrt(2/(in_size+layer_size))
 
@@ -94,7 +97,7 @@ begin
 layer
 end
 
-(layer::GRU)(in) =
+@everywhere (layer::GRU)(in) =
 begin
     focus  = sigm.(in * layer.wfi + layer.state * layer.wfs)
     keep   = sigm.(in * layer.wki + layer.state * layer.wks)
@@ -106,7 +109,7 @@ end
 
 
 
-mutable struct LSTM
+@everywhere mutable struct LSTM
     wki::Param
     wks::Param
     wfi::Param
@@ -118,7 +121,7 @@ mutable struct LSTM
     state
 end
 
-LSTM(in_size, layer_size) =
+@everywhere LSTM(in_size, layer_size) =
 begin
     sq = sqrt(2/(in_size+layer_size))
 
@@ -139,7 +142,7 @@ begin
 layer
 end
 
-(layer::LSTM)(in) =
+@everywhere (layer::LSTM)(in) =
 begin
     keep   = sigm.(in * layer.wki + layer.state * layer.wfs)
     forget = sigm.(in * layer.wfi + layer.state * layer.wks)
@@ -152,7 +155,7 @@ end
 
 
 
-mutable struct GSTM
+@everywhere mutable struct GSTM
     wfi::Param
     wfs::Param
     wri::Param
@@ -163,7 +166,7 @@ mutable struct GSTM
     state
 end
 
-GSTM(in_size, layer_size) =
+@everywhere GSTM(in_size, layer_size) =
 begin
     sq = sqrt(2/(in_size+layer_size))
 
@@ -183,7 +186,7 @@ begin
 layer
 end
 
-(layer::GSTM)(in) =
+@everywhere (layer::GSTM)(in) =
 begin
     st = tanh.(layer.state)
     focus    = sigm.(in * layer.wfi + st * layer.wfs)
@@ -221,11 +224,15 @@ begin
 
     losses = []
 
+    test_sc1 = []
+    test_sc2 = []
+
+
     for e in 1:hm_epochs
 
         loss = 0
 
-        for seq in data
+        results = @distributed (vcat) for seq in data
 
             d = @diff begin
 
@@ -237,7 +244,14 @@ begin
 
                 output = prop_model(model,input)[end]
                 sum(sum([(lbl-out).^2 for (lbl,out) in zip(label,output)]))
+
             end
+
+            [d]
+
+        end
+
+        for d in results
 
             loss += value(d)
 
@@ -273,8 +287,16 @@ begin
     # end
 
     test_score = sum([abs(lbl - sum(prop_model(model,inp)[end])) < .001 ? 1 : 0 for (inp,lbl) in test_set])
+    test_score2 = sum([abs(lbl - sum(prop_model(model,inp)[end])) < .01 ? 1 : 0 for (inp,lbl) in test_set])
 
-    println("test acc: $(test_score/hm_test*100)")
+    push!(test_sc1, test_score/hm_test*100)
+    push!(test_sc2, test_score2/hm_test*100)
+
+    if e%1 == 0
+        println("\t> test less_acc: $(test_score2/hm_test*100)")
+        println("\t> test more_acc: $(test_score/hm_test*100)")
+    end
+
 
 
     end
@@ -301,6 +323,18 @@ begin
 
     # TODO : graph here.
 
+    # test_sc1 is more accurate
+    # test_sc2 is less accurate
+
+    # plot(test_sc1)
+    # plot(test_sc2)
+
+
+
+
+
+
+
 (losses[1],losses[end])
 end
 
@@ -308,36 +342,41 @@ end
 
 
 
-# runner of main. main of main
-
-d = [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]
-
+# d = [[randn(1,input_size) for _ in 1:seq_len] for __ in hm_data]
 
 d = []
 for i in 1:hm_data
+    y = 1
     x = []
-    for t in seq_len
-        arr = [randn(), randn() < 0.5 ? 0 : 1]
-        push!(x, reshape(arr, 1, length(arr)))
+    while ! (y < 1)
+        x = []
+        for t in 1:seq_len
+            arr = [randn(), randn() < 0.5 ? 0 : 1]
+            push!(x, reshape(arr, 1, length(arr)))
+        end
+        y = sum(e1*e2 for (e1,e2) in x)
     end
-    y = sum(e1*e2 for (e1,e2) in x)
     push!(d, [x,y])
 end
 
 test_set = []
 for i in 1:hm_test
+    y = 1
     x = []
-    for t in seq_len
-        arr = [randn(), randn() < 0.5 ? 0 : 1]
-        push!(x, reshape(arr, 1, length(arr)))
+    while ! (y < 1)
+        x = []
+        for t in 1:seq_len
+            arr = [randn(), randn() < 0.5 ? 0 : 1]
+            push!(x, reshape(arr, 1, length(arr)))
+        end
+        y = sum(e1*e2 for (e1,e2) in x)
     end
-    y = sum(e1*e2 for (e1,e2) in x)
     push!(test_set, [x,y])
 end
 
 
 
-
+# runner of main. main of main
 
 for model_type in model_types
     println("\n\t> Running: $model_type \n")
