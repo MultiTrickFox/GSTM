@@ -8,25 +8,27 @@ if length(procs()) == 1 addprocs(3) end
 
 
 
-model_types = ["GRU","GSTM"]
+model_types = ["GRU","GSTM","LSTM"]
 
 input_size  = 2
-hiddens     = [2]
+hiddens     = []
 output_size = 1
 
 
-hm_data = 1_000
-hm_test = 100
+hm_data    = 1_000
+batch_size = 50
+hm_test    = 200
 
-seq_len = 20 # 50 # 100 # 200 # 500 # 1_000 # 2_000
+seq_len = 200
+# 100 # 200 # 500 # 1_000 # 2_000
+
 
 hm_epochs = 50
-lr        = .01
+lr        = .001
 
 
 alpha_moments = 0.9
 alpha_accugrads = 0.999
-
 
 
 layer_test = []#[10], [12], [16], [20], [25], [28], [30], [32], [36], [40], [45], [48], [50], [52], [56], [58], [60], [62], [64], [68], [72], [74], [80], [84], [88], [92], [96], [100]]
@@ -39,15 +41,19 @@ mk_model(in,hiddens,out,type) =
 begin
     model = []
     hm_layers = length(hiddens)+1
-    for i in 1:hm_layers
-        if i == 1
-            layer = type(in, hiddens[1])
-        elseif i == hm_layers
-            layer = type(hiddens[end],out)
-        else
-            layer = type(hiddens[i-1],hiddens[i])
+    if hm_layers != 1
+        for i in 1:hm_layers
+            if i == 1
+                layer = type(in, hiddens[1])
+            elseif i == hm_layers
+                layer = type(hiddens[end],out)
+            else
+                layer = type(hiddens[i-1],hiddens[i])
+            end
+            push!(model, layer)
         end
-        push!(model, layer)
+    else
+        push!(model, type(in,out))
     end
 model
 end
@@ -232,64 +238,70 @@ begin
 
         loss = 0
 
-        results = @distributed (vcat) for seq in data
+        for batch in batchify(data, batch_size)
 
-            d = @diff begin
+            results = @distributed (vcat) for seq in batch
 
-                # input  = seq[1:end-1]
-                # label  = seq[2:end]
+                d = @diff begin
 
-                input = seq[1]
-                label = seq[2]
+                    # input  = seq[1:end-1]
+                    # label  = seq[2:end]
 
-                output = prop_model(model,input)[end]
-                sum(sum([(lbl-out).^2 for (lbl,out) in zip(label,output)]))
+                    input = seq[1]
+                    label = seq[2]
 
-            end
+                    output = prop_model(model,input)[end]
+                    sum(sum([(lbl-out).^2 for (lbl,out) in zip(label,output)]))
 
-            grads = []
-
-            i = 0
-            for layer in model
-                for param in fieldnames(model_type)
-                    i +=1
-                    g = grad(d,getfield(layer, param))
-                    push!(grads, g)
                 end
+
+                grads = []
+
+                i = 0
+                for layer in model
+                    for param in fieldnames(model_type)
+                        i +=1
+                        g = grad(d,getfield(layer, param))
+                        push!(grads, g)
+                    end
+                end
+
+                grads, value(d)
+
             end
 
-            grads, value(d)
+            for (grads, l) in results
+
+                loss += l
+
+                i = 0
+                for layer in model
+                    for param in fieldnames(model_type)
+                        i +=1
+                        g = grads[i]
+                        if g != nothing
+
+                            g = grad_clip.(g)
+
+                            moments[i] = alpha_moments * moments[i] + (1 - alpha_moments) * g
+                            accugrads[i] = alpha_accugrads * accugrads[i] + (1 - alpha_accugrads) * g .^2
+
+                            moment_hat = moments[i] / (1 - alpha_moments .^ e)
+                            accugrad_hat = accugrads[i] / (1 - alpha_accugrads .^ e)
+
+                            setfield!(layer, param, Param(getfield(layer, param)-lr.*moment_hat/sqrt(sum(accugrad_hat) + 1e-8)))
+
+                            # setfield!(layer, param, Param(getfield(layer, param)-lr.*g))
+                        end
+
+                    end
+                end
+
+            end
 
         end
 
-        for (grads, l) in results
-
-            loss += l
-
-            i = 0
-            for layer in model
-                for param in fieldnames(model_type)
-                    i +=1
-                    g = grads[i]
-                    if g != nothing
-
-                        g = grad_clip.(g)
-
-                        moments[i] = alpha_moments * moments[i] + (1 - alpha_moments) * g
-                        accugrads[i] = alpha_accugrads * accugrads[i] + (1 - alpha_accugrads) * g .^2
-
-                        moment_hat = moments[i] / (1 - alpha_moments .^ e)
-                        accugrad_hat = accugrads[i] / (1 - alpha_accugrads .^ e)
-
-                        setfield!(layer, param, Param(getfield(layer, param)-lr.*moment_hat/sqrt(sum(accugrad_hat) + 1e-8)))
-
-                        # setfield!(layer, param, Param(getfield(layer, param)-lr.*g))
-                    end
-
-                end
-            end
-
-        end ; push!(losses, loss)
+    push!(losses, loss)
     verbose ? println("epoch $e loss: $loss") : ()
 
     # for (inp,lbl) in test_set
@@ -297,15 +309,15 @@ begin
     #     println("actual result: $lbl")
     # end
 
-    test_score = sum([abs(lbl - sum(prop_model(model,inp)[end])) < .001 ? 1 : 0 for (inp,lbl) in test_set])
-    test_score2 = sum([abs(lbl - sum(prop_model(model,inp)[end])) < .01 ? 1 : 0 for (inp,lbl) in test_set])
+    test_score = sum([abs(lbl - sum(prop_model(model,inp)[end])) < .01 ? 1 : 0 for (inp,lbl) in test_set])
+    test_score2 = sum([abs(lbl - sum(prop_model(model,inp)[end])) < .1 ? 1 : 0 for (inp,lbl) in test_set])
 
-    push!(test_sc1, test_score/hm_test*100)
-    push!(test_sc2, test_score2/hm_test*100)
+    push!(test_sc1, test_score)
+    push!(test_sc2, test_score2)
 
     if e%1 == 0
-        println("\t> test less_acc: $(test_score2/hm_test*100)")
-        println("\t> test more_acc: $(test_score/hm_test*100)")
+        println("\t> test lo_acc: $(test_score2)")
+        println("\t> test hi_acc: $(test_score)")
     end
 
 
@@ -362,7 +374,7 @@ for i in 1:hm_data
     while ! (y < 1)
         x = []
         for t in 1:seq_len
-            arr = [randn(), randn() < 0.5 ? 0 : 1]
+            arr = [randn(), randn() < 0.2 ? 0 : 1]
             push!(x, reshape(arr, 1, length(arr)))
         end
         y = sum(e1*e2 for (e1,e2) in x)
@@ -384,6 +396,22 @@ for i in 1:hm_test
     end
     push!(test_set, [x,y])
 end
+
+
+batchify(data, bs) =
+begin
+    batches = []
+    for b in 1:(trunc(Int,length(data)/bs))
+        push!(batches, data[(b-1)*bs+1:b*bs])
+    end
+    hm_left = length(data)%bs
+    if hm_left != 0
+        push!(batches, data[end-(hm_left-1):end])
+    end
+batches
+end
+
+
 
 
 
